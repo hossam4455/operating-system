@@ -1,0 +1,321 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Text;
+namespace os
+{
+    class virtual_disk
+    {
+
+        static void initialize()
+        {
+            StreamWriter wrirtdata = new StreamWriter(@"D:\os\test.txt");
+            for (int i = 0; i < 3; i++)
+            {
+                string date = "";
+                if (i == 0)
+                {
+                    for (int j = 0; j < 1024; j++)
+                        wrirtdata.Write('0');
+                }
+                else if (i == 1)
+                {
+                    for (int k = 0; k < 4; k++)
+                    {
+                        for (int j = 0; j < 1024; j++)
+                            wrirtdata.Write('*');
+                    }
+                }
+                else
+                {
+
+                    for (int k = 0; k < 1019; k++)
+                    {
+                        for (int j = 0; j < 1024; j++)
+                            wrirtdata.Write('#');
+                    }
+
+                }
+
+            }
+
+            wrirtdata.Close();
+            //read
+            //write
+        }
+        class FAT
+        {
+            int[] fat_table = new int[1024];
+
+            public void inti()
+            {
+                for (int i = 0; i < fat_table.Length; i++)
+                {
+                    if (i < 5) fat_table[i] = -1;
+                    else fat_table[i] = 0;
+
+                }
+            }
+            public void Write_Fat_Table()
+            {
+                FileStream f1;
+
+                f1 = new FileStream(@"D:\os\test.txt", FileMode.Open, FileAccess.Write);
+                // StreamWriter ri = new StreamWriter(f1);//to write inside file
+                f1.Seek(1024, SeekOrigin.Begin);
+                byte[] b = new byte[4096];
+                Buffer.BlockCopy(fat_table, 0, b, 0, b.Length);
+                f1.Write(b, 0, b.Length);
+
+                f1.Close();
+            }
+            public int[] Read_Fat_Table()
+            {
+                FileStream f1;
+
+                f1 = new FileStream(@"D:\os\test.txt", FileMode.Open, FileAccess.Read);
+                // StreamWriter ri = new StreamWriter(f1);//to write inside file
+                f1.Seek(1024, SeekOrigin.Begin);
+                byte[] b = new byte[4096];
+                f1.Read(b, 0, b.Length);
+                Buffer.BlockCopy(b, 0, fat_table, 0, b.Length);
+                return fat_table;
+                f1.Close();
+
+
+            }
+            static void Main(string[] args)
+            {
+                initialize();
+
+                FAT ob1 = new FAT();
+                int[] fat_table = new int[1024];
+                ob1.inti();
+                ob1.Write_Fat_Table();
+                fat_table = ob1.Read_Fat_Table();
+                for (int i = 0; i < fat_table.Length; i++) Console.WriteLine(fat_table[i]);
+            }
+        }
+    }
+
+
+    public class directory : DirectoryEntry
+    {
+        List<DirectoryEntry> Directory_Table = new List<DirectoryEntry>();
+        directory perant;
+
+
+    }
+    public class DirectoryEntry
+        {
+            string name;
+            char attribute;
+            byte[] file_Empty = new byte[11];
+            int firstCluster;
+            int fileSize;
+
+            public DirectoryEntry()
+            {
+                name = "NEW.txt";
+                attribute = '0';
+                firstCluster = 1;
+                fileSize = 1;
+            }
+
+        public DirectoryEntry(string ss, char tt, int f)
+        {
+            name = ss;
+            attribute = tt;
+            firstCluster = f;
+            // check that the file name contains .
+            if (attribute == 0)
+            {
+                if (ss.Length > 11)
+                {
+                    name = ss.Substring(0, 7) + ss.Substring(ss.Length - 4);
+                }
+                else
+                {
+                    name = ss;
+                }
+
+            }
+            else
+            {
+                name = ss.Substring(0, Math.Min(11, ss.Length));
+            }
+            byte[] get_byt()
+            {
+                byte[] byts = new byte[32];
+                byts = Encoding.Default.GetBytes(name);
+                byts[11] = Convert.ToByte(attribute); ;
+                for (int i = 0; i < 12; i++)
+                {
+
+                    byts[i + 12] = file_Empty[i];
+                }
+
+                byte[] bytes_fcluster = BitConverter.GetBytes(firstCluster);
+                if (BitConverter.IsLittleEndian)
+                    Array.Reverse(bytes_fcluster);
+                for (int i = 0; i < 4; i++)
+                    byts[i + 24] = bytes_fcluster[i];
+
+                byte[] bytes_fsize = BitConverter.GetBytes(fileSize);
+                if (BitConverter.IsLittleEndian)
+                    Array.Reverse(bytes_fsize);
+                for (int i = 0; i < 4; i++)
+                    byts[i + 28] = bytes_fsize[i];
+
+                return byts;
+            }
+
+
+
+            void get_directoryentry(byte[] b)
+            {
+                byte[] bname = new byte[4];
+                for (int i = 0; i < 4; i++)
+                {
+                    bname[i] = b[i];
+                }
+                name = Encoding.Default.GetString(bname);
+
+                attribute = Convert.ToChar(b[11]);
+                for (int i = 0; i < 12; i++)
+                {
+                    file_Empty[i] = b[i + 12];
+                }
+                byte[] bfcluster = new byte[4];
+                for (int i = 0; i < 4; i++)
+                {
+                    bfcluster[i] = b[i + 24];
+                }
+
+                firstCluster = (Int32)(BitConverter.ToInt16(bfcluster, 0));
+
+                byte[] bfilesze = new byte[4];
+                for (int i = 0; i < 4; i++)
+                {
+                    bfilesze[i] = b[i + 28];
+                }
+
+                fileSize = (Int32)(BitConverter.ToInt16(bfilesze, 0));
+            }
+
+
+
+            public void Write_Directory()  // method to write directory on the file "virtual_disk"
+            {
+                byte[] Directory_Table_bytes = new byte[32 * Directory_Table.Count]; // declare an array byte to collect directory_entries on it
+                byte[] Directory_Entry_bytes = new byte[32]; //declare an array byte to keep each directory_entry on it
+
+
+                for (int i = 0; i < Directory_Table.Count; i++) // loop to acess all directories in "Directory_Table"
+                {
+                    Directory_Entry_bytes = Directory_Entry.Get_Bytes(Directory_Table[i]); // keep bytes of each directory_entry of  "Directory_Table" in "Directory_Entry_bytes"
+
+                    for (int j = i * 32, c = 0; c < 32; j++, c++) // loop to write bytes of each directory_entry of "Directory_Table" in "Directory_Table_bytes" 
+                    {
+                        Directory_Table_bytes[j] = Directory_Entry_bytes[c];
+                    } //end of inner for loop
+
+                } // end of outer for loop 
+
+
+                decimal Number_Requird_Blocks = Math.Ceiling((decimal)(Directory_Table_bytes.Length / 1024));// calculate the number of required blocks to write Directory_Table
+                int Reminder_Blocks = (Directory_Table_bytes.Length % 1024); // calculate the number of non completed blocks after writing Directory_Table
+
+                if (Number_Requird_Blocks <= ) // if there is enough space to write the Directory
+                {
+                    int f_index, Last_index = -1;
+                    if (First_Cluster != 0)
+                    {
+                        f_index = First_Cluster;
+                    }
+                    else
+                    {
+                        f_index = FAT.Get_Available_Block();
+                        First_Cluster = f_index;
+                    }
+
+                    List<byte[]> blocks_of_directory = new List<byte[]>(); // declare list of byte array "blocks_of_director" to keep blocks of directory
+                    byte[] block_directory = new byte[1024]; //declare  byte array "block_directory" to fill the list "blocks_of_director"
+
+                    for (int b = 0, j = 0; b < Number_Requird_Blocks; b++)// loop to fill the list "blocks_of_director"
+                    {
+                        for (int i = 0; i < 1024; i++, j++)//loop to fill each block
+                        {
+                            block_directory[i] = Directory_Table_bytes[j];
+                        }
+
+                        blocks_of_directory.Add(block_directory); // add the completed block to the list "blocks_of_director"
+
+                    }
+
+                    for (int b = 0; b < Number_Requird_Blocks; b++) //loop to write the list"blocks_of_director" in the "virtual_disk"
+                    {
+                        Virtual_Disk.Write_Block(blocks_of_directory[b], f_index);//use "Virtual_Disk.Write_Block()" to write the list"blocks_of_director" in the "virtual_disk"
+                        FAT.Set_Next_Block(f_index, -1); // set f_index = -1 in FAT_Table
+                        if (Last_index != -1)
+                        {
+                            FAT.Set_Next_Block(Last_index, f_index); // set last_index = next index "f_index"
+                        }
+                        Last_index = f_index;
+                        f_index = FAT.Get_Available_Block(); //search for another available block
+
+                    }
+
+
+                }
+                else
+                {
+                    Console.WriteLine("There is not enough space 'Blocks' to write the Directory "); // if there is not enough space to write the Directory
+                }
+                // end of method "Write_Directory()"
+            }
+
+            public void Read_Directory()
+            {
+                List<DirectoryEntry> Directory_Table_list_Read = new List<DirectoryEntry>();// declare List<Directory_Entry> Directory_Table_list_Read to read directory on it
+                List<byte> ls_read = new List<byte>(); // declare List<byte> "ls_read" to read blocks of directory on it
+                int fi = First_Cluster;
+                int next = FAT.Get_Next_Block(fi);
+                if (First_Cluster != 0)
+                {
+                    fi = First_Cluster;
+                    next = FAT.Get_Next_Block(fi);
+                }
+
+                do
+                {
+                    ls_read.AddRange(Virtual_Disk.Read_Block(fi));// read blocks of directory on "ls_read" 
+                    fi = next;
+                    if (fi != -1)
+                    {
+                        next = FAT.Get_Next_Block(fi);
+                    }
+
+                } while (next != -1);
+
+            }
+
+
+
+        }
+
+
+
+    
+
+
+}
+
+
+
+        
+
+    
+
+}
